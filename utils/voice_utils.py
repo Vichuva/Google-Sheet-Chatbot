@@ -7,9 +7,14 @@ import os
 from elevenlabs.client import ElevenLabs
 import tempfile
 from pathlib import Path
+from dotenv import load_dotenv
+import os
 
-# Initialize ElevenLabs client
-ELEVENLABS_API_KEY = "sk_7b26ed6fde9b9a2d143cfd4ffb66b3aef6a38c5c68334343"
+# Load environment variables
+load_dotenv()
+
+# Get API key from environment
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 
 def transcribe_audio(audio_file_path: str) -> str:
     """
