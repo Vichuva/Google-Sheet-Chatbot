@@ -27,6 +27,8 @@ from data_sources.gsheet.snapshot_loader import load_snapshot
 from schema_intelligence.chromadb_client import SchemaVectorStore
 from utils.voice_utils import transcribe_audio, text_to_speech, save_audio_temp
 from utils.conversation_manager import ConversationManager
+from utils.question_cache import QuestionCache
+from utils.context_resolver import ContextResolver
 
 # Page configuration
 st.set_page_config(
@@ -114,6 +116,12 @@ if 'sheets_url' not in st.session_state:
 if 'data_loaded' not in st.session_state:
     st.session_state.data_loaded = False
 
+if 'question_cache' not in st.session_state:
+    st.session_state.question_cache = QuestionCache(similarity_threshold=0.95)
+
+if 'context_resolver' not in st.session_state:
+    st.session_state.context_resolver = ContextResolver()
+
 def extract_spreadsheet_id(url):
     """Extract spreadsheet ID from Google Sheets URL"""
     # Pattern for Google Sheets URLs
@@ -195,8 +203,38 @@ def save_message(role: str, content: str, metadata: dict = None):
     )
 
 def process_query(question: str):
-    """Process a user query through the full RAG pipeline."""
+    """Process a user query through the full RAG pipeline with context memory."""
     try:
+        # Step 0: Check question cache for similar questions
+        cache_result = st.session_state.question_cache.find_similar(question)
+        
+        if cache_result:
+            answer, metadata, similarity = cache_result
+            return {
+                'success': True,
+                'explanation': answer,
+                'data': metadata.get('data'),
+                'plan': metadata.get('plan'),
+                'schema_context': metadata.get('schema_context'),
+                'data_refreshed': False,
+                'from_cache': True,
+                'similarity': similarity
+            }
+        
+        # Step 0.5: Check if follow-up question and resolve context
+        original_question = question
+        is_followup = st.session_state.context_resolver.is_followup(
+            question, 
+            st.session_state.messages
+        )
+        
+        if is_followup:
+            resolved_question = st.session_state.context_resolver.resolve_context(
+                question,
+                st.session_state.messages
+            )
+            question = resolved_question  # Use resolved question for processing
+        
         # Automatic change detection before processing
         data_refreshed = check_and_refresh_data()
         
@@ -213,19 +251,35 @@ def process_query(question: str):
         # Step 4: Explanation
         explanation = explain_results(result, query_plan=plan, original_question=question)
         
+        # Cache the result for future similar questions
+        st.session_state.question_cache.add_to_cache(
+            original_question,  # Cache with original question
+            explanation,
+            {
+                'plan': plan,
+                'data': result.to_dict() if hasattr(result, 'to_dict') else None,
+                'schema_context': schema_context,
+                'data_refreshed': data_refreshed
+            }
+        )
+        
         return {
             'success': True,
             'explanation': explanation,
             'data': result,
             'plan': plan,
             'schema_context': schema_context,
-            'data_refreshed': data_refreshed
+            'data_refreshed': data_refreshed,
+            'from_cache': False,
+            'was_followup': is_followup,
+            'resolved_question': question if is_followup else None
         }
     except Exception as e:
         return {
             'success': False,
             'error': str(e),
-            'exception': e
+            'exception': e,
+            'from_cache': False
         }
 
 # Header
