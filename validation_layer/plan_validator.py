@@ -232,12 +232,6 @@ def validate_plan(plan: dict, schema_path="planning_layer/plan_schema.json"):
     if plan.get("aggregation_function") is None:
         plan["aggregation_function"] = ""
     
-    if plan.get("subset_aggregation_column") is None:
-        plan["subset_aggregation_column"] = ""
-    
-    if plan.get("subset_aggregation_function") is None:
-        plan["subset_aggregation_function"] = ""
-    
     # Recursively handle None in filter values
     for filter_item in plan.get("filters", []):
         if filter_item.get("value") is None:
